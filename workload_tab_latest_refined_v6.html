@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Capacity Workload Profiling Demo</title>
+<style>
+  body{margin:0;background:#222;font-family:Arial,Helvetica,sans-serif}
+  .stage{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px}
+  .canvas{
+    position:relative;width:min(1152px,96vw);aspect-ratio:1152/1536;
+    background:url('IMG_01C857F5-FC43-41D8-9D32-99D8D7AC6962.jpeg') center/contain no-repeat,#fff;
+    box-shadow:0 12px 30px rgba(0,0,0,.35);overflow:auto;
+  }
+  .app-title{
+    position:absolute;left:4.8%;top:4.2%;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:rgba(255,255,255,.92);padding:6px 8px;border-radius:4px;
+  }
+  .app-title b{font-size:20px;color:#20252b}
+  .app-title select{
+    border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font-size:12px;background:#fff;color:#111827;
+  }
+  .app-meta{font-size:12px;font-weight:700;color:#6b7280}
+  .draft-badge{
+    position:absolute;right:2.2%;top:7.0%;
+    background:#1696d2;color:#fff;font-size:12px;font-weight:700;
+    padding:8px 12px;border-radius:6px;
+  }
+  .draft-badge.complete{background:#22a447}
+
+  /* reduced height, left of In Draft, above tabs */
+  .snapshot-panel{
+    position:absolute;left:43.5%;top:8.2%;width:26.5%;
+    background:rgba(255,255,255,.96);border:1px solid #e5e7eb;border-radius:8px;
+    box-shadow:0 4px 12px rgba(0,0,0,.08);padding:6px 8px;
+  }
+  .snapshot-title{font-size:12px;font-weight:700;color:#374151;margin-bottom:3px}
+  .snapshot-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .comp-card{border:1px solid #e5e7eb;border-radius:8px;padding:4px 6px;background:#fafafa}
+  .comp-label{font-size:10px;font-weight:700;color:#6b7280;margin-bottom:2px}
+  .comp-value{font-size:11px;font-weight:700}
+  .bad{color:#b91c1c}
+  .ok{color:#15803d}
+  .pending{color:#6b7280}
+
+  .statusbox-red{background:#dc2626;color:#fff}
+  .statusbox-green{background:#16a34a;color:#fff}
+  .statusbox-grey{background:#6b7280;color:#fff}
+
+  .parent-tabs{
+    position:absolute;left:1.5%;top:15.7%;width:76%;
+    display:flex;gap:22px;background:rgba(255,255,255,.88);padding:4px 8px;border-radius:6px;
+  }
+  .child-tabs{
+    position:absolute;left:2.2%;top:21.9%;width:66%;
+    display:flex;gap:18px;background:rgba(255,255,255,.88);padding:4px 8px;border-radius:6px;
+  }
+  .tab{font-size:13px;color:#6b7280;padding:6px 2px;border-bottom:2px solid transparent;font-weight:600}
+  .tab.active{color:#c41230;border-bottom-color:#c41230}
+  .tab.disabled{color:#9ca3af;background:rgba(229,231,235,.55);padding:6px 8px;border-radius:4px;border-bottom-color:transparent}
+
+  .source-panel{
+    position:absolute;left:3.5%;top:26.1%;width:93%;
+    background:rgba(255,255,255,.985);border:1px solid #e5e7eb;border-radius:8px;
+    box-shadow:0 4px 12px rgba(0,0,0,.08);padding:10px 12px;
+  }
+  .source-panel .title{font-size:13px;font-weight:700;color:#374151;margin-bottom:8px}
+  .source-grid{
+    display:grid;grid-template-columns:.88fr 1.12fr .62fr .62fr auto;gap:8px;align-items:start;
+  }
+  .fg label{display:block;font-size:11px;font-weight:700;color:#6b7280;margin-bottom:4px}
+  .fg select,.fg input{
+    width:100%;padding:8px 9px;border:1px solid #d1d5db;border-radius:6px;
+    font-size:12px;background:#fff;color:#111827;appearance:auto;
+  }
+  .fg select:disabled,.fg input:disabled{
+    background:#f3f4f6!important;color:#6b7280!important;opacity:1;
+  }
+  .fg.disabled select{background:#f3f4f6!important;color:#6b7280!important}
+  .run-wrap{display:grid;grid-template-columns:.92fr .88fr;gap:4px;align-items:start}
+  .run-box{
+    width:100%;padding:4px 5px;border:1px solid #d1d5db;border-radius:6px;
+    font-size:9px;background:#f8fafc;color:#374151;line-height:1.1;min-height:32px;
+    overflow:hidden; white-space:normal;
+  }
+  .populate-btn{
+    margin-top:20px;border:1px solid #c41230;background:#c41230;color:#fff;border-radius:6px;
+    padding:9px 10px;font-size:12px;font-weight:700;cursor:pointer;min-width:118px;
+  }
+  .populate-btn:disabled{background:#d1d5db;border-color:#d1d5db;color:#6b7280;cursor:not-allowed}
+  .populate-summary{
+    margin-top:8px;font-size:11px;color:#4b5563;line-height:1.45;
+    background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;display:none;
+  }
+  .populate-summary.show{display:block}
+  .populate-heading{font-weight:700;color:#374151;margin-bottom:4px}
+
+  .manual-label{
+    position:absolute;left:5.7%;top:42.9%;
+    font-size:15px;font-weight:700;color:#374151;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:4px;
+  }
+  .manual-grid{
+    position:absolute;left:5.7%;top:46.9%;width:79.5%;
+    display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;
+  }
+  .manual-grid label{display:block;font-size:11px;font-weight:700;color:#4b5563;margin-bottom:4px}
+  .manual-grid input,.manual-grid select{
+    width:100%;padding:9px 11px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:#fff;color:#111827;
+  }
+  .manual-grid.disabled input,.manual-grid.disabled select{background:#f3f4f6;color:#9ca3af}
+  .comment-row{grid-column:1 / span 2}
+  .add-btn{
+    position:absolute;right:6.7%;top:68.8%;
+    border:1px solid #d1d5db;background:#fff;color:#48a15a;border-radius:6px;
+    padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;
+  }
+  .add-btn:disabled{background:#f3f4f6;color:#9ca3af}
+
+  .table-title{
+    position:absolute;left:5.7%;top:73.2%;
+    font-size:15px;font-weight:700;color:#374151;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:4px;
+  }
+  /* reduced freq avg peak columns */
+  .table-header{
+    position:absolute;left:5.8%;top:77.2%;width:88.7%;
+    display:grid;grid-template-columns:12% 14% 6% 7% 7% 7% 12% 10% 10% 15%;
+    gap:0;background:rgba(255,255,255,.94);padding:4px 8px;border-radius:4px;
+    font-size:11px;font-weight:700;color:#4b5563;
+  }
+  .rows{
+    position:absolute;left:5.8%;top:80.1%;width:88.7%;
+    display:flex;flex-direction:column;gap:4px;
+  }
+  .row{
+    display:grid;grid-template-columns:12% 14% 6% 7% 7% 7% 12% 10% 10% 15%;
+    gap:0;background:rgba(255,255,255,.90);padding:6px 8px;border-radius:6px;
+    font-size:12px;color:#374151;align-items:center;border:1px solid transparent;
+  }
+  .row.initial{background:rgba(107,114,128,.10);border-color:rgba(107,114,128,.18)}
+  .row.accepted{background:rgba(34,197,94,.10);border-color:rgba(34,197,94,.22)}
+  .row.overridden{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.26)}
+  .row.manual{background:rgba(37,99,235,.10);border-color:rgba(37,99,235,.22)}
+  .cell-input{
+    width:92%;padding:4px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:#111827;font-size:12px;
+  }
+  .cell-input.editable{border-color:#cbd5e1;background:#fff}
+  .cell-input:disabled{color:#374151;background:transparent}
+  .row .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .icon{
+    width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;cursor:pointer;
+  }
+  .approve{background:#f0fdf4;color:#16a34a}
+  .override{background:#fff7ed;color:#c2410c}
+  .delete{background:#fef2f2;color:#dc2626}
+  .revert{background:#eff6ff;color:#2563eb}
+  .link-btn{
+    display:inline-block;font-size:11px;font-weight:700;color:#2563eb;text-decoration:none;
+    border:1px solid #bfdbfe;background:#eff6ff;padding:5px 8px;border-radius:6px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+  }
+  .alert-square{
+    display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;
+    background:#dc2626;color:#fff;font-size:11px;font-weight:700;margin-right:4px;
+  }
+
+  .footer-actions{
+    position:absolute;right:3.3%;top:calc(80.1% + 200px);display:flex;gap:10px;
+  }
+  .save-btn,.submit-btn{
+    border:none;border-radius:6px;padding:11px 18px;font-size:14px;font-weight:700;color:#fff;cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  .save-btn{background:#39a935}
+  .submit-btn{background:#1696d2}
+  .save-btn:disabled,.submit-btn:disabled{background:#d1d5db;color:#6b7280}
+  .save-btn .iconmark{color:#fff!important;filter:brightness(0) invert(1)}
+  .toast{
+    position:absolute;right:4%;top:4%;background:#111827;color:#fff;padding:10px 14px;
+    border-radius:8px;font-size:12px;box-shadow:0 8px 18px rgba(0,0,0,.25);
+    opacity:0;transform:translateY(8px);transition:all .18s ease;
+  }
+  .toast.show{opacity:1;transform:translateY(0)}
+  .required-note{font-size:11px;color:#b91c1c;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="canvas">
+    <div class="app-title">
+      <b id="appName">Capacity Details for DERIVLEDGER</b>
+      <select id="baid">
+        <option>BA0010826</option>
+        <option>BA0001005</option>
+        <option>BA0001060</option>
+        <option>BA0003900</option>
+        <option>BA0001107</option>
+      </select>
+      <span class="app-meta">Sensitivity:
+        <select id="sensitivity" onchange="updateCompliance(); onSourceChange();" style="margin-left:4px;border:1px solid #d1d5db;border-radius:6px;padding:5px 8px;font-size:12px;background:#fff;color:#111827;">
+          <option selected>High</option>
+          <option>Medium</option>
+          <option>Low</option>
+        </select>
+      </span>
+    </div>
+    <div class="draft-badge" id="formBadge">In Draft</div>
+
+    <div class="snapshot-panel">
+      <div class="snapshot-title">Compliance Snapshot</div>
+      <div class="snapshot-grid">
+        <div class="comp-card">
+          <div class="comp-label">Testing Compliance</div>
+          <div class="comp-value pending" id="testingStatus">Not Assessed</div>
+          <div style="font-size:9px;color:#6b7280;margin-top:2px" id="testingReason">Select test inputs to assess compliance.</div>
+        </div>
+        <div class="comp-card">
+          <div class="comp-label">Observability Compliance</div>
+          <div class="comp-value pending" id="obsCompliance">Not Assessed</div>
+          <div style="font-size:9px;color:#6b7280;margin-top:2px" id="obsReason">Compliance will be calculated after data is populated or manual TCIs are added.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="parent-tabs">
+      <div class="tab">Metadata</div>
+      <div class="tab active">Business Capacity Management</div>
+      <div class="tab">Capacity Testing</div>
+      <div class="tab">Observability</div>
+      <div class="tab disabled" id="complianceTab">Compliance</div>
+    </div>
+    <div class="child-tabs">
+      <div class="tab">Business Capacity Requirements</div>
+      <div class="tab active">Workload Profiling</div>
+      <div class="tab">Operational Mitigations</div>
+    </div>
+
+    <div class="source-panel">
+      <div class="title">Integrated Source Selection</div>
+      <div class="source-grid">
+        <div class="fg" id="testToolFg">
+          <label>Test Tool</label>
+          <select id="testTool" onchange="onSourceChange()">
+            <option value="">No selection</option>
+            <option>OpenText Performance Engineering</option>
+            <option>Jmeter</option>
+            <option>ICE</option>
+          </select>
+        </div>
+        <div class="fg" id="testRunFg">
+          <label>Test Run</label>
+          <div class="run-wrap">
+            <select id="testRun" onchange="onSourceChange()" disabled>
+              <option value="">No selection</option>
+              <option>Last successful run</option>
+              <option>No Run in Policy Window</option>
+              <option>Last completed run</option>
+            </select>
+            <div class="run-box" id="runInfo">RunID: -<br>Test Date: -<br>Duration: -</div>
+          </div>
+        </div>
+        <div class="fg" id="obsToolFg">
+          <label>Observability Tool</label>
+          <select id="obsTool" onchange="onSourceChange()">
+            <option value="">No selection</option>
+            <option>AppDynamics</option>
+            <option>Splunk ITSI</option>
+            <option>Athene</option>
+          </select>
+        </div>
+        <div class="fg" id="obsSourceFg">
+          <label>Observability Source</label>
+          <select id="obsSource" onchange="onSourceChange()" disabled>
+            <option value="">No selection</option>
+            <option>derivedledger-app-01</option>
+            <option>derivedledger-app-02</option>
+          </select>
+        </div>
+        <button class="populate-btn" id="populateBtn" onclick="populateTCIs()">Populate TCIs</button>
+      </div>
+      <div class="populate-summary" id="populateSummary">
+        <div class="populate-heading" id="populateHeading">Source Selections</div>
+        <div id="populateSummaryBody"></div>
+      </div>
+    </div>
+
+    <div class="manual-label">Add Technical Indicator</div>
+    <div class="manual-grid" id="manualGrid">
+      <div>
+        <label>Technical Indicator Name</label>
+        <input id="mName" placeholder="CPU"/>
+      </div>
+      <div>
+        <label>Technical Indicator Type</label>
+        <select id="mType">
+          <option>Technical Indicator</option>
+          <option>Application Technical Indicator</option>
+        </select>
+      </div>
+      <div>
+        <label>Technical Indicator Unit(s)</label>
+        <select id="mUnit"><option>%</option><option>Sessions</option><option>GB</option><option>Transactions</option><option>Requests</option></select>
+      </div>
+      <div>
+        <label>Technical Indicator Frequency</label>
+        <select id="mFreq"><option>Minute</option><option>Five Minutes</option><option>every .5 second</option><option>Second</option></select>
+      </div>
+      <div>
+        <label>Technical Indicator Average Volume</label>
+        <input id="mAvg" placeholder="50"/>
+      </div>
+      <div>
+        <label>Technical Indicator Peak Volume</label>
+        <input id="mPeak" placeholder="100"/>
+      </div>
+      <div>
+        <label>Observed</label>
+        <select id="mObserved" onchange="toggleMetricUrlRequirement()">
+          <option>No</option>
+          <option>Yes</option>
+        </select>
+      </div>
+      <div>
+        <label>Metrics URL</label>
+        <input id="mMetricsUrl" placeholder="https://..."/>
+        <div class="required-note" id="metricReq" style="display:none;">Metrics URL is required when Observed = Yes</div>
+      </div>
+      <input type="hidden" id="manualEditIndex" value=""/>
+      <div class="comment-row">
+        <label>Technical Indicators Comments</label>
+        <input id="mComment" placeholder="Manual comment"/>
+      </div>
+    </div>
+    <button class="add-btn" id="addBtn" onclick="addManual()">+ Add</button>
+
+    <div class="table-title">Added Technical Indicators</div>
+    <div class="table-header">
+      <div>Name</div><div>Type</div><div>Unit</div><div>Frequency</div><div>Volume Avg</div><div>Volume Peak</div><div>Comment</div><div>Source</div><div>Metric URL</div><div>Actions</div>
+    </div>
+
+    <div class="rows" id="rows"></div>
+
+    <div class="footer-actions" id="footerActions">
+      <button class="save-btn" id="saveBtn" onclick="saveForm()"><span class="iconmark">💾</span> Save</button>
+      <button class="submit-btn" id="submitBtn" onclick="submitForm()">✓ Submit</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<script>
+  let rows = [];
+  let lastPopulatedSignature = null;
+  let formSubmitted = false;
+  let populationHistory = [];
+
+  const appDataset = [
+    {name:'Capacity Details for GFXD', baid:'BA0001005', sensitivity:'High'},
+    {name:'Capacity Details for DERIVLEDGER', baid:'BA0010826', sensitivity:'Medium'},
+    {name:'Capacity Details for ADAM-GLUE', baid:'BA0001060', sensitivity:'High'},
+    {name:'Capacity Details for GTRF-HTS', baid:'BA0003900', sensitivity:'Low'},
+    {name:'Capacity Details for 3D-SECURE-ASP', baid:'BA0001107', sensitivity:'High'}
+  ];
+  function chooseResetApp(){
+    const idx = new Date().getSeconds() % appDataset.length;
+    return appDataset[idx];
+  }
+
+  function seededNumber(seed, min, max){
+    let h = 0;
+    for(let i=0;i<seed.length;i++) h = (h*31 + seed.charCodeAt(i)) >>> 0;
+    const x = Math.abs(Math.sin(h * 0.0001)) % 1;
+    return Math.round(min + x*(max-min));
+  }
+  function sourceLabel(){
+    const obs = document.getElementById('obsTool').value;
+    if(obs === 'AppDynamics') return 'AppD';
+    if(obs === 'Splunk ITSI') return 'Splunk ITSI';
+    if(obs === 'Athene') return 'Athene';
+    return 'No selection';
+  }
+  function metricBaseUrl(){
+    const obs = document.getElementById('obsTool').value;
+    if(obs === 'AppDynamics') return 'https://appd.example';
+    if(obs === 'Splunk ITSI') return 'https://itsi.example';
+    if(obs === 'Athene') return 'https://athene.example';
+    return '';
+  }
+  function toolSignature(){
+    return [
+      document.getElementById('testTool').value,
+      document.getElementById('testRun').value,
+      document.getElementById('obsTool').value,
+      document.getElementById('obsSource').value,
+      document.getElementById('sensitivity').value
+    ].join('|');
+  }
+  function currentSeed(name=''){ return toolSignature() + '|' + name; }
+
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;t.classList.add('show');
+    clearTimeout(window.__toast);
+    window.__toast=setTimeout(()=>t.classList.remove('show'),1500);
+  }
+
+  function rowClass(r){
+    if(r.status==='initial') return 'initial';
+    if(r.status==='accepted') return 'accepted';
+    if(r.status==='overridden') return 'overridden';
+    if(r.status==='manual') return 'manual';
+    return '';
+  }
+
+  function repositionFooter(){
+    const footer = document.getElementById('footerActions');
+    const count = rows.length;
+    const topPercent = 80.1 + (count * 3.1) + 4;
+    footer.style.top = topPercent + '%';
+    footer.style.bottom = 'auto';
+  }
+
+  function renderRows(){
+    const el=document.getElementById('rows');
+    el.innerHTML='';
+    rows.forEach((r,i)=>{
+      const avgChanged = r.status==='overridden' && r.avg !== r.original.avg;
+      const peakChanged = r.status==='overridden' && r.peak !== r.original.peak;
+      const freqChanged = r.status==='overridden' && r.frequency !== r.original.frequency;
+      const freqContent = `<div>${freqChanged ? `<span class="alert-square">!</span>` : ''}<input class="cell-input ${r.status==='overridden'&&!formSubmitted?'editable':''}" value="${r.frequency}" ${(r.status==='overridden'&&!formSubmitted)?'':'disabled'} onchange="updateField(${i},'frequency',this.value)"/></div>`;
+      const avgContent = `<div>${avgChanged ? `<span class="alert-square">!</span>` : ''}<input class="cell-input ${r.status==='overridden'&&!formSubmitted?'editable':''}" value="${r.avg}" ${(r.status==='overridden'&&!formSubmitted)?'':'disabled'} onchange="updateField(${i},'avg',this.value)"/></div>`;
+      const peakContent = `<div>${peakChanged ? `<span class="alert-square">!</span>` : ''}<input class="cell-input ${r.status==='overridden'&&!formSubmitted?'editable':''}" value="${r.peak}" ${(r.status==='overridden'&&!formSubmitted)?'':'disabled'} onchange="updateField(${i},'peak',this.value)"/></div>`;
+      const actionButtons = formSubmitted ? '' : (r.manual ? `
+          <div class="icon override" title="Edit" onclick="event.stopPropagation();loadManualIntoForm(${i})">✎</div>
+          <div class="icon delete" title="Delete" onclick="event.stopPropagation();deleteRow(${i})">🗑</div>
+        ` : `
+          <div class="icon approve" title="Approve" onclick="event.stopPropagation();approveRow(${i})">✓</div>
+          <div class="icon override" title="Override" onclick="event.stopPropagation();toggleOverride(${i})">✎</div>
+          <div class="icon delete" title="Delete" onclick="event.stopPropagation();deleteRow(${i})">🗑</div>
+          ${r.status==='overridden' ? `<div class="icon revert" title="Revert" onclick="event.stopPropagation();revertRow(${i})">↺</div>` : ``}
+        `);
+      const row=document.createElement('div');
+      row.className='row '+rowClass(r);
+      row.innerHTML = `
+        <div>${r.name}</div>
+        <div>${r.type}</div>
+        <div>${r.unit}</div>
+        <div>${freqContent}</div>
+        <div>${avgContent}</div>
+        <div>${peakContent}</div>
+        <div>${r.comment || ''}</div>
+        <div>${r.status==='overridden' && !r.manual ? '(' + r.source + ')' : r.source}</div>
+        <div>${r.url ? `<a class="link-btn" href="${r.url}" target="_blank" onclick="event.stopPropagation()">Metric URL</a>` : ``}</div>
+        <div class="actions">${actionButtons}</div>`;
+      el.appendChild(row);
+    });
+    repositionFooter();
+    updateCompliance();
+  }
+
+  function makeAutoRows(){
+    const src = sourceLabel();
+    const base = metricBaseUrl();
+    const namesBySource = {
+      'AppDynamics': ['CPU','Memory','Storage','Network','threads','caches'],
+      'Splunk ITSI': ['logins','trades','settlements','orders','payments'],
+      'Athene': ['derivatives','settlements','positions','bookings']
+    };
+    const obsTool = document.getElementById('obsTool').value;
+    const pool = namesBySource[obsTool] || ['CPU'];
+    const existingNames = new Set(rows.map(r => r.name + '|' + r.source));
+    const available = pool.filter(name => !existingNames.has(name + '|' + src));
+    const desired = available.length ? Math.max(1, seededNumber(currentSeed('count'), 1, Math.min(3, available.length))) : 0;
+    const chosen = available.slice(0, desired);
+    const out = chosen.map((name, idx) => {
+      const isApp = ['logins','trades','settlements','orders','payments','derivatives','positions','bookings'].includes(name);
+      let unitPool = isApp ? ['Transactions','Sessions','Requests'] : ['%','%','%'];
+      const freqPool = isApp ? ['Second','Minute','every .5 second'] : ['Minute','Five Minutes','Second'];
+      const unit = unitPool[(seededNumber(currentSeed(name+'u'),0,100)+idx)%unitPool.length];
+      const frequency = freqPool[(seededNumber(currentSeed(name+'f'),0,100)+idx)%freqPool.length];
+      const avg = String(['CPU','Memory','Storage'].includes(name)
+        ? seededNumber(currentSeed(name+'a'), 0, 100)
+        : seededNumber(currentSeed(name+'a'), isApp ? 20 : 10, isApp ? 220 : 170));
+      const peak = String(['CPU','Memory','Storage'].includes(name)
+        ? seededNumber(currentSeed(name+'p'), Number(avg), 100)
+        : seededNumber(currentSeed(name+'p'), isApp ? 120 : 20, isApp ? 1200 : 260));
+      return {
+        name,
+        type: isApp ? 'Application Technical Indicator' : 'Technical Indicator',
+        unit,
+        frequency,
+        avg,
+        peak,
+        comment:'',
+        source:src,
+        url: base ? `${base}/${encodeURIComponent(name)}` : '',
+        status:'initial',
+        original:{avg, peak, frequency},
+        manual:false
+      };
+    });
+    return out;
+  }
+
+  function populateTCIs(){
+    if(formSubmitted) return;
+    if(document.getElementById('testRun').value === 'No Run in Policy Window') return;
+    if(!document.getElementById('testTool').value || !document.getElementById('testRun').value || !document.getElementById('obsTool').value || !document.getElementById('obsSource').value) return;
+    const autos = makeAutoRows();
+    rows = [...rows, ...autos];
+    lastPopulatedSignature = toolSignature();
+    populationHistory.push(`Test Tool = ${document.getElementById('testTool').value}, Test Run = ${document.getElementById('testRun').value}, ${document.getElementById('runInfo').innerText.replace('\n',' | ')}, Observability Tool = ${document.getElementById('obsTool').value}, Observability Source = ${document.getElementById('obsSource').value}, Sensitivity = ${document.getElementById('sensitivity').value}`);
+    const ps = document.getElementById('populateSummary');
+    document.getElementById('populateSummaryBody').innerHTML = populationHistory.map((s,i)=>`${i+1}. ${s}`).join('<br>');
+    ps.classList.add('show');
+    updatePopulateState();
+    renderRows();
+    showToast(autos.length ? 'TCIs populated from selected tools' : 'No new unique TCIs available for this selection');
+  }
+
+  function approveRow(i){
+    if(formSubmitted) return;
+    rows[i].status = rows[i].manual ? 'manual' : 'accepted';
+    if(rows[i].source.endsWith(' Override')){
+      rows[i].source = rows[i].source.replace(' Override','');
+    }
+    renderRows();
+    showToast(rows[i].name + ' approved');
+  }
+
+  function toggleOverride(i){
+    if(formSubmitted) return;
+    if(rows[i].manual) return;
+    rows[i].status = rows[i].status === 'overridden' ? 'initial' : 'overridden';
+    rows[i].source = rows[i].status === 'overridden' ? sourceLabel() + ' Override' : sourceLabel();
+    renderRows();
+    showToast(rows[i].name + (rows[i].status === 'overridden' ? ' override enabled' : ' override disabled'));
+  }
+
+  
+
+  function enforceLimits(row){
+    if(['CPU','Memory','Storage'].includes(row.name)){
+      if(parseFloat(row.avg) > 100) row.avg = '100';
+      if(parseFloat(row.peak) > 100) row.peak = '100';
+    }
+  }
+
+function updateField(i, field, value){
+
+    if(formSubmitted) return;
+    rows[i][field] = value;
+    enforceLimits(rows[i]);
+    renderRows();
+  }
+
+  function revertRow(i){
+    if(formSubmitted) return;
+    rows[i].avg = rows[i].original.avg;
+    rows[i].peak = rows[i].original.peak;
+    rows[i].frequency = rows[i].original.frequency;
+    rows[i].source = sourceLabel();
+    rows[i].status = 'initial';
+    renderRows();
+    showToast(rows[i].name + ' reverted');
+  }
+
+  function deleteRow(i){
+    if(formSubmitted) return;
+    rows.splice(i,1);
+    renderRows();
+    showToast('Row deleted');
+  }
+
+  function toggleMetricUrlRequirement(){
+    const observed = document.getElementById('mObserved').value;
+    if(observed === 'No') document.getElementById('mMetricsUrl').value = '';
+    document.getElementById('metricReq').style.display = observed === 'Yes' ? 'block' : 'none';
+    updateCompliance();
+  }
+
+  function resetAddTCISection(){
+    document.getElementById('mName').value = '';
+    document.getElementById('mType').value = 'Technical Indicator';
+    document.getElementById('mUnit').value = '%';
+    document.getElementById('mFreq').value = 'Minute';
+    document.getElementById('mAvg').value = '';
+    document.getElementById('mPeak').value = '';
+    document.getElementById('mObserved').value = 'No';
+    document.getElementById('mMetricsUrl').value = '';
+    document.getElementById('mComment').value = '';
+    toggleMetricUrlRequirement();
+    document.getElementById('addBtn').textContent = '+ Add';
+    const mei=document.getElementById('manualEditIndex'); if(mei) mei.value = '';
+  }
+
+
+  function loadManualIntoForm(i){
+    const r = rows[i];
+    document.getElementById('mName').value = r.name || '';
+    document.getElementById('mType').value = r.type || 'Technical Indicator';
+    document.getElementById('mUnit').value = r.unit || '%';
+    document.getElementById('mFreq').value = r.frequency || 'Minute';
+    document.getElementById('mAvg').value = r.avg || '';
+    document.getElementById('mPeak').value = r.peak || '';
+    document.getElementById('mObserved').value = r.observed || 'No';
+    document.getElementById('mMetricsUrl').value = r.url || '';
+    document.getElementById('mComment').value = r.comment || '';
+    document.getElementById('manualEditIndex').value = String(i);
+    document.getElementById('addBtn').textContent = 'Update';
+    toggleMetricUrlRequirement();
+    document.getElementById('mName').scrollIntoView({behavior:'smooth', block:'center'});
+  }
+
+function addManual(){
+    if(formSubmitted) return;
+    const observed = document.getElementById('mObserved').value;
+    const url = document.getElementById('mMetricsUrl').value.trim();
+    if(observed === 'Yes' && !url){
+      showToast('Metrics URL is required when Observed = Yes');
+      return;
+    }
+    const item = {
+      name: document.getElementById('mName').value || 'New TCI',
+      type: document.getElementById('mType').value,
+      unit: document.getElementById('mUnit').value,
+      frequency: document.getElementById('mFreq').value,
+      avg: document.getElementById('mAvg').value || '0',
+      peak: document.getElementById('mPeak').value || '0',
+      comment: document.getElementById('mComment').value || '',
+      source: 'Manual',
+      url: url,
+      status: 'manual',
+      original: {avg: document.getElementById('mAvg').value || '0', peak: document.getElementById('mPeak').value || '0', frequency: document.getElementById('mFreq').value},
+      manual: true,
+      observed: observed
+    };
+    enforceLimits(item);
+    const editIndex = document.getElementById('manualEditIndex').value;
+    if(editIndex !== '' && !isNaN(Number(editIndex))){
+      rows[Number(editIndex)] = item;
+      showToast('Manual TCI updated');
+    } else {
+      rows.push(item);
+      showToast('Manual TCI added');
+    }
+    resetAddTCISection();
+    renderRows();
+  }
+
+  function updateCompliance(){
+    const testingStatus = document.getElementById('testingStatus');
+    const testingReason = document.getElementById('testingReason');
+    const obsCompliance = document.getElementById('obsCompliance');
+    const obsReason = document.getElementById('obsReason');
+    const sensitivity = document.getElementById('sensitivity').value;
+    const runSel = document.getElementById('testRun').value;
+    const policyWindow = sensitivity === 'High' ? '6M' : sensitivity === 'Medium' ? '12M' : '18M';
+
+    if(runSel === 'No Run in Policy Window'){
+      testingStatus.textContent = 'Non Complaint';
+      testingStatus.className = 'comp-value statusbox-red';
+      testingReason.textContent = `No run found in policy window (${policyWindow}) for ${sensitivity} sensitivity.`;
+    } else if(!runSel) {
+      testingStatus.textContent = 'Not Assessed';
+      testingStatus.className = 'comp-value statusbox-grey';
+      testingReason.textContent = 'Select test inputs to assess compliance.';
+    } else {
+      testingStatus.textContent = 'Met';
+      testingStatus.className = 'comp-value statusbox-green';
+      testingReason.textContent = `Valid run found in policy window (${policyWindow}).`;
+    }
+
+    const manualRows = rows.filter(r => r.manual);
+    if(rows.length === 0){
+      obsCompliance.textContent = 'Not Assessed';
+      obsCompliance.className = 'comp-value statusbox-grey';
+      obsReason.textContent = 'Compliance will be calculated after data is populated or manual TCIs are added.';
+      return;
+    }
+    const hasObservedNo = manualRows.some(r => r.observed === 'No');
+    const hasObservedYesWithoutUrl = manualRows.some(r => r.observed === 'Yes' && !r.url);
+    if(hasObservedNo || hasObservedYesWithoutUrl){
+      obsCompliance.textContent = 'Not Met';
+      obsCompliance.className = 'comp-value statusbox-red';
+      obsReason.textContent = hasObservedNo
+        ? 'Observability Compliance is Not Met because one or more manual TCIs are marked Observed = No.'
+        : 'Observability Compliance is Not Met because an observed manual TCI is missing a Metrics URL.';
+    } else {
+      obsCompliance.textContent = 'Met';
+      obsCompliance.className = 'comp-value statusbox-green';
+      obsReason.textContent = manualRows.length
+        ? 'Manual TCIs have valid observed status and Metrics URL where required.'
+        : 'All TCIs were sourced from the selected observability tool.';
+    }
+  }
+
+  function updatePopulateState(){
+    const selectionsReady = document.getElementById('testTool').value && document.getElementById('testRun').value && document.getElementById('obsTool').value && document.getElementById('obsSource').value;
+    const canPopulate = !formSubmitted && selectionsReady && document.getElementById('testRun').value !== 'No Run in Policy Window' && lastPopulatedSignature !== toolSignature();
+    document.getElementById('populateBtn').disabled = !canPopulate;
+  }
+
+  function onSourceChange(){
+    const testToolSelected = !!document.getElementById('testTool').value;
+    document.getElementById('testRun').disabled = !testToolSelected;
+    if(!testToolSelected) document.getElementById('testRun').value = '';
+
+    const obsToolSelected = !!document.getElementById('obsTool').value;
+    document.getElementById('obsSource').disabled = !obsToolSelected;
+    if(!obsToolSelected) document.getElementById('obsSource').value = '';
+
+    const runSel = document.getElementById('testRun').value;
+    if(runSel === 'Last successful run'){
+      document.getElementById('runInfo').innerHTML = 'RunID: 874221<br>Test Date: 2026-03-20<br>Duration: 1h 15m';
+    } else if(runSel === 'No Run in Policy Window'){
+      document.getElementById('runInfo').innerHTML = 'RunID: None<br>Test Date: -<br>Duration: N/A';
+    } else if(runSel === 'Last completed run') {
+      document.getElementById('runInfo').innerHTML = 'RunID: 874110<br>Test Date: 2026-02-18<br>Duration: 58m';
+    } else {
+      document.getElementById('runInfo').innerHTML = 'RunID: -<br>Test Date: -<br>Duration: -';
+    }
+    updatePopulateState();
+    updateCompliance();
+  }
+
+  function lockForm(){
+    formSubmitted = true;
+    document.getElementById('formBadge').textContent='Form Complete';
+    document.getElementById('formBadge').classList.add('complete');
+    document.getElementById('complianceTab').classList.remove('disabled');
+    document.getElementById('populateHeading').textContent = 'Source Selections for Submitted TCIs';
+    const unconfirmed = rows.filter(r => r.status === 'initial');
+    if(unconfirmed.length){
+      rows = rows.filter(r => r.status !== 'initial');
+      renderRows();
+    }
+    if(rows.length === 0){
+      document.getElementById('populateSummary').classList.add('show');
+      document.getElementById('populateSummaryBody').innerHTML = 'No data from Integration sources populated for TCI submissions';
+    }
+    ['testTool','testRun','obsTool','obsSource','sensitivity','baid','mName','mType','mUnit','mFreq','mAvg','mPeak','mObserved','mMetricsUrl','mComment'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.disabled = true;
+    });
+    ['obsToolFg','obsSourceFg','testToolFg','testRunFg'].forEach(id=>{
+      document.getElementById(id).classList.add('disabled');
+    });
+    document.getElementById('populateBtn').disabled = true;
+    document.getElementById('addBtn').disabled = true;
+    document.getElementById('manualGrid').classList.add('disabled');
+    document.getElementById('saveBtn').disabled = true;
+    document.getElementById('submitBtn').disabled = true;
+    resetAddTCISection();
+    renderRows();
+  }
+
+  function saveForm(){
+    if(formSubmitted) return;
+    localStorage.setItem('workload_demo_final8', JSON.stringify({rows, lastPopulatedSignature, populationHistory}));
+    document.getElementById('formBadge').textContent='In Draft';
+    document.getElementById('formBadge').classList.remove('complete');
+    showToast('Form saved');
+  }
+
+  function submitForm(){
+    if(formSubmitted) return;
+    saveForm();
+    lockForm();
+    showToast('Form submitted');
+  }
+
+  // Reset on refresh: new randomized defaults
+  rows = [];
+  lastPopulatedSignature = null;
+  populationHistory = [];
+  formSubmitted = false;
+  const resetApp = chooseResetApp();
+  document.getElementById('appName').textContent = resetApp.name;
+  document.getElementById('baid').value = resetApp.baid;
+  document.getElementById('sensitivity').value = resetApp.sensitivity;
+  ['testTool','testRun','obsTool','obsSource'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('populateSummary').classList.remove('show');
+  document.getElementById('populateSummaryBody').innerHTML = '';
+  document.getElementById('populateHeading').textContent = 'Source Selections';
+  resetAddTCISection();
+  toggleMetricUrlRequirement();
+  onSourceChange();
+  renderRows();
+  updatePopulateState();
+</script>
+</body>
+</html>
